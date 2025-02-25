@@ -1,0 +1,34 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "iso_c",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "args": "method=iso_c model=ViT-B-16 num_tasks=8",
+            "env": {
+                "WANDB_API_KEY": "83b5aa31dee1c29cbcad6a05b53018482c83cfa1",
+                "HF_ENDPOINT": "https://hf-mirror.com",
+                "CUDA_VISIBLE_DEVICES": "7"
+            }
+        },
+        {
+            "name": "iso_cts",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "args": "method=iso_cts model=ViT-B-16 num_tasks=8 method.common_space_fraction=0.8",
+            "env": {
+                "WANDB_API_KEY": "83b5aa31dee1c29cbcad6a05b53018482c83cfa1",
+                "HF_ENDPOINT": "https://hf-mirror.com",
+                "CUDA_VISIBLE_DEVICES": "7"
+            }
+        }
+    ]
+}

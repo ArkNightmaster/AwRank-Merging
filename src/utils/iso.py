@@ -12,9 +12,9 @@ def iso_c(task_vectors, config):
             new_vector[key] = sum(tvs) / len(tvs)
 
             if len(task_vectors[0].vector[key].shape) == 2 and "text_projection" not in key:
-                new_vector[key] *= len(tvs)
-                U, S, V = torch.linalg.svd(new_vector[key], full_matrices=False)
-                S_mean = torch.ones_like(S) * S.mean()
+                new_vector[key] *= len(tvs)  # 恢复原始尺度
+                U, S, V = torch.linalg.svd(new_vector[key], full_matrices=False)  # SVD分解
+                S_mean = torch.ones_like(S) * S.mean()  # 计算平均奇异值并创建均匀分布
 
                 new_vector[key] = torch.linalg.multi_dot(
                     (

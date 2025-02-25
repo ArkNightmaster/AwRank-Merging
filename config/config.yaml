@@ -29,6 +29,7 @@ wandb:
   project: model-merging
   mode: offline
   group: ${model}
+  name: ${method.name}
 
 hydra:
   run:

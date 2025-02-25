@@ -1,4 +1,4 @@
-export CUDA_VISIBLE_DEVICES=1,4,6,7
+export CUDA_VISIBLE_DEVICES=4,5,6,7
 
 model=ViT-B-16
 num_tasks=8
