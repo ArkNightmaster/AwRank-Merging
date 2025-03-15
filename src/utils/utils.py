@@ -273,33 +273,58 @@ def check_state_dicts_equal(state_dict1, state_dict2):
 
 
 def topk_values_mask(M, K=0.7, return_mask=False, reshape_mask=False):
+    """
+    对输入张量应用基于幅值的Top-K掩码，保留每行中幅值最大的K%元素。
+    
+    Args:
+        M (torch.Tensor): 输入张量，可以是1D或2D张量。
+        K (float, optional): 要保留的元素比例，可以是0-1之间的小数或1-100之间的整数百分比。默认为0.7。
+        return_mask (bool, optional): 是否返回掩码张量。默认为False。
+        reshape_mask (bool, optional): 是否重塑掩码以匹配输入张量的形状。默认为False。
+    
+    Returns:
+        如果return_mask=False:
+            - 应用掩码后的张量
+            - 每行保留元素的平均比例
+        如果return_mask=True:
+            - 应用掩码后的张量
+            - 每行保留元素的平均比例
+            - 原始掩码张量
+    """
     if K == 100:
+        # 如果K=100，则不应用掩码，保留所有元素
         # print("Not applying mask")
         if return_mask:
             return M, torch.ones_like(M), None
         else:
             return M, torch.ones_like(M)
 
+    # 将百分比转换为小数
     if K >= 1:
         K /= 100
 
+    # 保存原始形状以便后续恢复
     original_shape = M.shape
+    # 如果输入是1D张量，将其转换为2D张量以便处理
     if M.dim() == 1:
         M = M.unsqueeze(0)
 
     n, d = M.shape
     k = int(d * K)
-    k = d - k  # Keep top k elements instead of bottom k elements
+    k = d - k  # 保留前k个最大元素，而不是后k个最小元素
 
-    # Find the k-th smallest element by magnitude for each row
+    # 找到每行中按幅值排序的第k小元素
     kth_values, _ = M.abs().kthvalue(k, dim=1, keepdim=True)
-    # Create a mask tensor with True for the top k elements in each row
+    # 创建掩码张量，对于每行中幅值大于等于第k小元素的位置标记为True
     mask = M.abs() >= kth_values
+    # 根据原始形状调整掩码的维度
     final_mask = mask.squeeze() if original_shape == M.squeeze().shape else mask
 
+    # 如果需要，重塑掩码以匹配输入张量的形状
     if reshape_mask:
         final_mask = final_mask.reshape(M.shape)
 
+    # 根据return_mask参数返回不同的结果
     if return_mask:
         return M * final_mask, final_mask.float().mean(dim=1), final_mask
     else:

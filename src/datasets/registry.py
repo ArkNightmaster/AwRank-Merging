@@ -98,7 +98,7 @@ def get_dataset(
     preprocess,
     location,
     batch_size=128,
-    num_workers=6,
+    num_workers=8,
     val_fraction=0.1,
     max_val_samples=5000,
 ):

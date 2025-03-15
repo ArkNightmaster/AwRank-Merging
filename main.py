@@ -1,5 +1,6 @@
 import os
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+os.environ["WANDB_MODE"] = "offline"
 os.environ["WANDB_API_KEY"] = "83b5aa31dee1c29cbcad6a05b53018482c83cfa1"
 from pprint import pprint
 

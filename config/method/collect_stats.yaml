@@ -1,0 +1,10 @@
+name: collect_stats
+k: 100
+use_ties: false
+ties_agg: "sum"
+
+# Parameters for statistics collection
+batch_size: 32
+num_batches: 50
+
+full_name: ${method.name} 

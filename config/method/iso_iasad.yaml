@@ -1,0 +1,12 @@
+name: iso_iasad
+k: 100
+use_ties: false
+ties_agg: "sum"
+
+# Parameters for the Input-Aware Scaling and Alternating Decomposition
+num_iters: 10
+sparsity: 0.1
+rank_ratio: 0.75
+prune_level: "row"
+
+full_name: ${method.name}_k=${method.k}_iters=${method.num_iters}_sparsity=${method.sparsity}_rank=${method.rank_ratio} 
