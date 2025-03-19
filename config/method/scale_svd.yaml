@@ -1,0 +1,10 @@
+name: scale_svd
+sparsity: 0.1
+rank_ratio: 0.75
+num_iters: 10
+mask_strategy: "row"
+k: 100
+use_ties: false
+ties_agg: "sum"
+
+full_name: ${method.name}_sparsity=${method.sparsity}_rank=${method.rank_ratio} 

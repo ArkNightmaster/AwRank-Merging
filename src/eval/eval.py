@@ -150,7 +150,7 @@ def evaluate_task_vector(
         scaling_coef_range = [1 / args.num_tasks]
     elif args.specify_lambda != "None":
         scaling_coef_range = [args.specify_lambda]
-    elif args.method.name in ["iso_c", "iso_cts", "TSVM"]:
+    elif args.method.name in ["iso_c", "iso_cts", "TSVM", 'scale_svd']:
         scaling_coef_range = np.linspace(0.0, 3.0, args.n_eval_points)[1:]
     else:
         scaling_coef_range = np.linspace(0.0, 1.0, args.n_eval_points)[1:]
@@ -184,6 +184,45 @@ def evaluate_task_vector(
                         round(info[tall_mask_lambda]["avg_top1"] * 100, 2),
                     )
                 )
+    elif args.method.name == "scale_svd":
+        # 对于scale_svd方法，task_vector是一个列表，包含每个数据集的处理后的task vector
+        print("\nEvaluating individual Scale-SVD processed task vectors...")
+        info["individual_results"] = {}
+        
+        for i, tv in enumerate(task_vector):
+            dataset_name = args.DATASETS[i] if i < len(args.DATASETS) else f"dataset_{i}"
+            print(f"\nEvaluating task vector for {dataset_name}...")
+            info["individual_results"][dataset_name] = {}
+            
+            best_avg_top1 = 0.0
+            not_best_counter = 0
+            for scaling_coef in scaling_coef_range:
+                print("\n" * 2)
+                print("=" * 43, f"alpha = {scaling_coef:.2f}", "=" * 43)
+                result = evaluate_task_vector_at_coef(
+                    tv,
+                    pretrained_checkpoint,
+                    args,
+                    scaling_coef,
+                    eval_masks,
+                )
+                info["individual_results"][dataset_name][scaling_coef] = result
+                print(
+                    "\t avg_normalized_top1: {}%\t avg_top1: {}%".format(
+                        round(result["avg_normalized_top1"] * 100, 2),
+                        round(result["avg_top1"] * 100, 2),
+                    )
+                )
+                
+                if args.early_stopping:
+                    if result["avg_top1"] > best_avg_top1:
+                        best_avg_top1 = result["avg_top1"]
+                        not_best_counter = 0
+                    else:
+                        not_best_counter += 1
+                        if not_best_counter >= args.early_stopping_patience:
+                            print(f"Early stopping at alpha = {scaling_coef:.2f} due to no improvement in the last {args.early_stopping_patience} steps.")
+                            break
     else:
         best_avg_top1 = 0.0
         not_best_counter = 0

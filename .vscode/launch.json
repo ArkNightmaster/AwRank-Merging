@@ -4,6 +4,8 @@
     // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+
+    
         {
             "name": "average",
             "type": "debugpy",
@@ -28,6 +30,7 @@
                 "WANDB_API_KEY": "83b5aa31dee1c29cbcad6a05b53018482c83cfa1",
                 "HF_ENDPOINT": "https://hf-mirror.com",
                 "CUDA_VISIBLE_DEVICES": "0"
+                "CUDA_VISIBLE_DEVICES": "0"
             }
         },
         {
@@ -44,12 +47,64 @@
             }
         },
         {
-            "name": "iso_iasad",
+            "name": "test_scale_svd_function",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "scripts/test_scale_svd.py",
+            "console": "integratedTerminal",
+            "args": "--function-test",
+            "env": {
+                "WANDB_API_KEY": "83b5aa31dee1c29cbcad6a05b53018482c83cfa1",
+                "HF_ENDPOINT": "https://hf-mirror.com",
+                "CUDA_VISIBLE_DEVICES": "0"
+            }
+        },
+        {   
+            "name": "test_scale_svd_layer_stats",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "scripts/test_scale_svd.py",
+            "console": "integratedTerminal",
+            "args": "--layer-stats",
+            "env": {
+                "WANDB_API_KEY": "83b5aa31dee1c29cbcad6a05b53018482c83cfa1",
+                "HF_ENDPOINT": "https://hf-mirror.com",
+                "CUDA_VISIBLE_DEVICES": "0"
+            }
+        },
+        {
+            "name": "test_scale_svd_existing_stats",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "scripts/test_scale_svd.py",
+            "console": "integratedTerminal",
+            "args": "--existing-stats",
+            "env": {
+                "WANDB_API_KEY": "83b5aa31dee1c29cbcad6a05b53018482c83cfa1",
+                "HF_ENDPOINT": "https://hf-mirror.com",
+                "CUDA_VISIBLE_DEVICES": "0"
+            }
+        },
+        {
+            "name": "collect_stats",
             "type": "debugpy",
             "request": "launch",
             "program": "main.py",
             "console": "integratedTerminal",
-            "args": "method=iso_iasad model=ViT-B-16 num_tasks=8 method.num_iters=20 method.sparsity=0.1 method.rank_ratio=0.75",
+            "args": "method=collect_stats model=ViT-B-16 num_tasks=8",
+            "env": {
+                "WANDB_API_KEY": "83b5aa31dee1c29cbcad6a05b53018482c83cfa1",
+                "HF_ENDPOINT": "https://hf-mirror.com",
+                "CUDA_VISIBLE_DEVICES": "0"
+            }
+        },
+        {
+            "name": "scale_svd",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "args": "method=scale_svd model=ViT-B-16 num_tasks=8",
             "env": {
                 "WANDB_API_KEY": "83b5aa31dee1c29cbcad6a05b53018482c83cfa1",
                 "HF_ENDPOINT": "https://hf-mirror.com",

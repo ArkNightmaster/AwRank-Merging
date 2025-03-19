@@ -21,8 +21,8 @@ from src.utils.utils import (
 from src.utils.variables_and_paths import get_finetuned_path, get_zeroshot_path
 from src.utils.TSVM_utils import compute_and_sum_svd_mem_reduction
 from src.utils.iso import iso_c, iso_cts
-from src.utils.iso_iasad import iso_iasad
 from src.utils.layer_stats import collect_layer_statistics
+from src.utils.scale_svd_utils import scale_svd_merging
 
 
 def get_all_checkpoints(
@@ -89,8 +89,6 @@ def create_task_vector(
         Tuple[torch.Tensor, Optional[Dict[str, torch.Tensor]]]: A tuple containing the task vector and evaluation masks
             (if applicable).
     """
-
-
     ft_checks, ptm_check = get_all_checkpoints(config)
     check_parameterNamesMatch(ft_checks + [ptm_check])
 
@@ -99,57 +97,19 @@ def create_task_vector(
     print(f"MODEL: {config.model}, METHOD {config.method.name}")
 
     # 根据方法名称选择不同的处理方式
-    if config.method.name in ["TSVM", "iso_c", "iso_cts", "iso_iasad", "collect_stats"]:
+    if config.method.name in ["TSVM", "iso_c", "iso_cts", "scale_svd", "collect_stats"]:
         # 这些方法使用NonLinearTaskVector对象列表
         task_vectors = [
             NonLinearTaskVector(config.model, ptm_check, check) for check in ft_checks
         ]
-        
-        # 对于collect_stats方法，执行特殊处理
-        if config.method.name == "collect_stats":
-            print(f"=== Collecting Layer Statistics ===")
-            # Get datasets for statistics collection
-            from src.datasets import get_dataset
-            from src.datasets.common import get_dataloader
 
-            stats_dir = os.path.join('results/layer_stats')
-            os.makedirs(stats_dir, exist_ok=True)
-            
-            # 创建ImageEncoder实例并加载状态字典
-            model = ImageEncoder(config.model)
-            model.load_state_dict(ptm_check)
-            model = model.to(config.device)
-            model.eval()
-            
-            # 处理每个数据集
-            for dataset_name in config.DATASETS:
-                print(f"Collecting statistics for {dataset_name}...")
-                # 获取数据集和数据加载器
-                dataset = get_dataset(
-                    dataset_name, 
-                    model.train_preprocess,
-                    config.data_location, 
-                    batch_size=config.method.batch_size,
-                )
-                
-                dataloader = get_dataloader(dataset, 
-                                            is_train=True, 
-                                            args=config)
-                
-                # 收集统计信息
-                stats_path = os.path.join(stats_dir, f"{config.model}_{dataset_name}_stats.pt")
-                layer_stats = collect_layer_statistics(
-                    model, 
-                    dataloader, 
-                    num_batches=config.method.num_batches,
-                    save_path=stats_path
-                )
-                print(f"Statistics saved to {stats_path}")
-            exit()
-        
-        # 处理其他基于SVD或各向同性合并的方法
+        # 根据不同的方法处理task vectors
+        if config.method.name == "collect_stats":
+            print(f"=== Collecting Statistics ===")
+            collect_statistics(task_vectors, config)
+            return None, None
         elif config.method.name == "iso_c":
-            print(f"=== Iso-C ===")
+            print(f"=== Using Iso-C ===")
             new_merged_tv = iso_c(task_vectors, config)
         elif config.method.name == "TSVM":
             print(f"=== Using TSVM ===")
@@ -157,9 +117,12 @@ def create_task_vector(
         elif config.method.name == "iso_cts":
             print(f"=== Using Iso-CTS ===")
             new_merged_tv = iso_cts(task_vectors, config)
-        elif config.method.name == "iso_iasad":
-            print(f"=== Using Iso-IASAD ===")
-            new_merged_tv = iso_iasad(task_vectors, config)
+        elif config.method.name == "scale_svd":
+            print(f"=== Using Scale-SVD ===")
+            # 对每个task vector应用scale_svd处理
+            processed_vectors = scale_svd_merging(task_vectors, config)
+            # 返回处理后的task vectors列表
+            return processed_vectors, None
     else:
         # 其他方法需要扁平化的向量表示
         # 将检查点转换为向量
@@ -172,6 +135,7 @@ def create_task_vector(
         # compute the task vector as {\theta_t - \theta_0}.
         tv_flat_checks = flat_ft - flat_ptm
 
+        # 验证向量化和反向量化过程的正确性
         # 验证向量化和反向量化过程的正确性
         assert check_state_dicts_equal(
             vector_to_state_dict(flat_ptm, ptm_check, remove_keys), ptm_check
@@ -187,7 +151,6 @@ def create_task_vector(
         )
         
         # 创建任务向量对象
-        # 注意：这里我们使用列表推导而不是字典推导，因为ft_checks是列表
         task_vectors = [
             NonLinearTaskVector(config.model, ptm_check, check) for check in ft_checks
         ]
@@ -266,9 +229,84 @@ def create_task_vector(
             eval_masks = {key: value for key, value in zip(config.DATASETS, eval_masks)}
         else:
             raise ValueError(f"Method {config.method.name} not defined.")
+        
+        # 处理其他方法
+        if config.method.name == "ties":
+            # TIES Merging
+            merge_func = "dis-mean"
+            merged_tv = ties_merging(
+                tv_flat_checks, reset_thresh=config.method.k, merge_func=merge_func
+            )
+        elif config.method.name in ["sum", "zeroshot", "average"]:
+            # "sum" corresponds to Task Arithmetic (TA)
+            # TA, zeroshot, weight average all construct the task vector with sum, but use different scaling factors.
+            tv_flat_checks, _ = topk_values_mask(
+                tv_flat_checks, K=config.method.k, return_mask=False
+            )
+            merged_tv = tv_flat_checks.sum(dim=0)
+        elif config.method.name == "tall_mask":
+            # construct multi-task vector
+            if config.method.use_ties:
+                print(f"Using TIES for constructing multi-task vector")
+                merged_tv = ties_merging(
+                    tv_flat_checks, reset_thresh=20, merge_func=f"dis-sum"
+                )
+            else:
+                print(f"Using Task Arithmetic for constructing multi-task vector")
+                tv_flat_checks, _ = topk_values_mask(
+                    tv_flat_checks, K=config.method.k, return_mask=False
+                )
+                merged_tv = tv_flat_checks.sum(dim=0)
+            # get TALL masks
+            if config.method.load_mask:
+                # load tall masks directly from storage
+                eval_masks = load_tall_mask(remove_keys, ptm_check, config)
+            else:
+                print(f"=== Constructing TALL Mask ===")
+                # construct tall masks
+                eval_masks = construct_tall_mask(
+                    tv_flat_checks,
+                    flat_ft,
+                    flat_ptm,
+                    merged_tv,
+                    ptm_check,
+                    remove_keys,
+                    config,
+                )
+        elif config.method.name == "consensus":  # consensus merging
+            # construct consensus mask (assuming the TALL masks have already been constructed)
+            consensus_mask = construct_consensus_mask(
+                ptm_check, config.method.prun_thre_k, config, remove_keys
+            )
+            # construct multi-task vector
+            if config.method.use_ties:
+                merged_tv = ties_merging(
+                    tv_flat_checks, reset_thresh=20, merge_func="dis-sum"
+                )
+            else:
+                tv_flat_checks, _ = topk_values_mask(
+                    tv_flat_checks, K=config.method.k, return_mask=False
+                )  # top-k mag filtering
+                merged_tv = tv_flat_checks.sum(dim=0)
+            # apply the consensus mask to filter multi-task vector
+            merged_tv = merged_tv * consensus_mask
+        elif config.method.name == "mag_masking":
+            # Magnitude masking baseline
+            print(f"=== Using Magnitude Masking ===")
+            merged_tv = tv_flat_checks.sum(dim=0)
+            _, _, eval_masks = topk_values_mask(
+                tv_flat_checks, K=config.method.k, return_mask=True
+            )
+            eval_masks = [
+                vector_to_state_dict(mask, ptm_check, remove_keys=remove_keys)
+                for mask in eval_masks
+            ]
+            eval_masks = {key: value for key, value in zip(config.DATASETS, eval_masks)}
+        else:
+            raise ValueError(f"Method {config.method.name} not defined.")
 
     # 根据方法创建最终的任务向量
-    if config.method.name in ["TSVM", "iso_c", "iso_cts", "iso_iasad"]:
+    if config.method.name in ["TSVM", "iso_c", "iso_cts", "scale_svd"]:
         task_vector = NonLinearTaskVector(model_name=config.model, vector=new_merged_tv)
     else:
         merged_tv_state_dict = vector_to_state_dict(
@@ -284,4 +322,5 @@ def create_task_vector(
         eval_masks = None
 
     return task_vector, eval_masks
+ 
  

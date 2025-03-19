@@ -1,99 +1,105 @@
-# Isotropic Model Merging with Input-Aware Scaling and Alternating Decomposition
+# Model Merging Framework
 
-This repository contains the implementation of isotropic model merging techniques for Vision Transformer (ViT) models. The project focuses on merging multiple task-specific models into a single multi-task model while preserving performance across all tasks.
+This repository contains a framework for merging multiple fine-tuned models using various algorithms. The framework supports several merging methods including Task Arithmetic (TA), TIES, TALL, TSVM, Iso-C, Iso-CTS, and our newly added Scale-SVD method.
 
-## Project Overview
+## Project Structure
 
-The project implements several model merging algorithms:
+- `src/`: Main source code
+  - `models/`: Model definitions and task vector implementations
+  - `utils/`: Utility functions and merging algorithms
+  - `eval/`: Evaluation code
+  - `datasets/`: Dataset implementations
+- `config/`: Configuration files
+- `scripts/`: Helper scripts
+- `results/`: Results and outputs
 
-1. **Iso-C**: Isotropic Merging in Common Subspace
-   - Merges models by Task Arithmetic (summation) and makes the spectrum of singular values uniform.
+## Merging Algorithms
 
-2. **Iso-CTS**: Isotropic Merging in Common and Task-Specific Subspaces
-   - Merges by Task Arithmetic (common subspace), replaces the least significant singular vectors by task-specific ones (task-specific subspaces), and makes the spectrum of singular values uniform.
+### Existing Algorithms
 
-3. **Iso-IASAD**: Isotropic Merging with Input-Aware Scaling and Alternating Decomposition (New)
-   - Uses layer input statistics to scale parameters according to their importance
-   - Decomposes parameters into low-rank (shared knowledge) and sparse (task-specific) components
-   - Employs iterative optimization to refine both components
+1. **Task Arithmetic (TA)**: Simple addition of task vectors.
+2. **TIES Merging**: Task vectors merging with interference reduction.
+3. **TALL Mask**: Task vectors with layer-wise masking.
+4. **TSVM**: Task Space Singular Value Merging - uses SVD to merge task vectors.
+5. **Iso-C**: Isotropic Consolidation - makes singular values uniform.
+6. **Iso-CTS**: Isotropic Common and Task-Specific spaces.
 
-## Algorithm Details
+### New Algorithm: Scale-SVD
 
-### Iso-C and Iso-CTS
+The Scale-SVD algorithm is a new method for task vector pruning and compression. It applies a low-rank plus sparse decomposition to task vectors, using input activations as scaling factors. This method:
 
-These algorithms focus on making the spectrum of singular values uniform after merging, which helps prevent dominant components from overshadowing others. Iso-CTS further enhances this by explicitly preserving task-specific subspaces.
+1. Extracts a scale vector from the difference between a model and a merged model
+2. Applies SVD with scaling based on layer inputs
+3. Decomposes weights into low-rank and sparse components
+4. Optimizes the trade-off between model size and performance
 
-### Iso-IASAD (New Algorithm)
+## ViT Model Support
 
-The new algorithm extends the isotropic merging approach with three key improvements:
+The Scale-SVD algorithm has been adapted to work with Vision Transformer (ViT) models. The implementation:
 
-1. **Input-Aware Scaling**:
-   - Uses layer input statistics to scale parameters according to their importance
-   - Parameters that receive stronger input signals are considered more important
+1. Handles ViT-specific layer naming conventions and structures
+2. Collects comprehensive layer statistics for all layer types:
+   - **Attention Layers**: 
+     - `attn.in_proj_weight`: Statistics for the combined QKV projection
+     - `attn.out_proj.weight`: Statistics for the output projection
+   - **MLP Layers**: 
+     - `mlp.c_fc.weight`: Statistics for the first MLP layer (expansion)
+     - `mlp.c_proj.weight`: Statistics for the second MLP layer (projection)
+   - **LayerNorm Layers**: Statistics for normalization layers
+   - **Convolutional Layers**: Statistics for patch embedding and other convolutions
+   - **Linear Layers**: Statistics for all other linear projections
+3. Uses these statistics to better scale the SVD decomposition for each layer
 
-2. **Alternating Decomposition**:
-   - Decomposes parameters into low-rank (shared knowledge) and sparse (task-specific) components
-   - Low-rank component captures common knowledge across tasks
-   - Sparse component preserves task-specific knowledge
-
-3. **Iterative Optimization**:
-   - Employs alternating least squares optimization to refine both components
-   - Iteratively improves the decomposition to better balance common and task-specific knowledge
-
-## Implementation
-
-The implementation consists of three main components:
-
-1. **Layer Statistics Collection**: Collects input statistics for each layer to determine parameter importance.
-2. **Task-Specific Vector Extraction**: Extracts and scales task-specific vectors based on input statistics.
-3. **Alternating Decomposition**: Decomposes parameters into low-rank and sparse components through iterative optimization.
+The layer statistics are organized in a hierarchical structure that matches the model's parameter names, making it easy to apply the appropriate scaling factors during merging.
 
 ## Usage
 
-To use the new Iso-IASAD algorithm:
+To use the Scale-SVD algorithm:
 
-```bash
-# First, collect layer statistics (if not already done)
-python main.py method="collect_stats" model=ViT-B-16 num_tasks=8
+```python
+from src.utils.scale_svd_utils import scale_svd_merging
+from src.eval.aggregation import create_task_vector
 
-# Then, merge and evaluate using Iso-IASAD
-python main.py method="iso_iasad" model=ViT-B-16 num_tasks=8 method.num_iters=10 method.sparsity=0.1 method.rank_ratio=0.75
+# Configure the method in your config
+config.method.name = "scale_svd"
+config.method.sparsity = 0.1  # Sparsity level (0.0-1.0)
+config.method.rank_ratio = 0.75  # Ratio for low-rank component
+
+# Create and apply the task vector
+task_vector, _ = create_task_vector(config)
 ```
 
-## Configuration Parameters
+### Collecting Layer Statistics
 
-The Iso-IASAD algorithm can be configured with the following parameters:
+For optimal performance, you can collect comprehensive layer-specific activation statistics:
 
-- `num_iters`: Number of iterations for the alternating optimization (default: 10)
-- `sparsity`: Sparsity level for the task-specific component (default: 0.1)
-- `rank_ratio`: Ratio of the rank to use for the low-rank component (default: 0.75)
+```bash
+# Collect layer statistics for a specific dataset
+python main.py method="collect_stats" model="ViT-B-16" method.batch_size=32 method.num_batches=50
+```
 
-## Implementation Summary
+Or use the test script:
 
-The following files were created or modified to implement the Iso-IASAD algorithm:
+```bash
+# Test layer statistics collection
+python scripts/test_scale_svd.py --layer-stats --config config/config.yaml
+```
 
-1. **New Files**:
-   - `src/utils/layer_stats.py`: Implements the layer statistics collection utilities
-   - `src/utils/iso_iasad.py`: Implements the Iso-IASAD algorithm
-   - `config/method/iso_iasad.yaml`: Configuration for the Iso-IASAD method
-   - `config/method/collect_stats.yaml`: Configuration for statistics collection
-   - `docs/iso_iasad.md`: Detailed documentation for the Iso-IASAD algorithm
+## Parameters
 
-2. **Modified Files**:
-   - `src/eval/aggregation.py`: Updated to include the Iso-IASAD method and statistics collection
-   - `scripts/merge_and_eval.sh`: Added commands for Iso-IASAD and statistics collection
-   - `README.md`: Updated to include information about the Iso-IASAD algorithm
+The Scale-SVD algorithm accepts the following parameters:
 
-## Next Steps
+- `sparsity`: Controls the sparsity level (default: 0.1)
+- `rank_ratio`: Controls the rank of the low-rank component (default: 0.75)
+- `num_iters`: Number of iterations for alternating optimization (default: 10)
+- `mask_strategy`: Strategy for masking ("row" or "global", default: "row")
 
-To further improve the Iso-IASAD algorithm, consider the following:
+## Implementation Details
 
-1. **Hyperparameter Tuning**: Experiment with different values for `num_iters`, `sparsity`, and `rank_ratio` to find the optimal configuration for different tasks.
+The algorithm consists of three main components:
 
-2. **Adaptive Sparsity**: Implement adaptive sparsity levels based on task difficulty or dataset characteristics.
+1. `extract_scale_vector`: Extracts a scale vector and applies SVD with scaling
+2. `scale_svd`: Applies low-rank plus sparse decomposition to a tensor
+3. `altern_ls`: Performs alternating optimization between low-rank and sparse components
 
-3. **Layer-Specific Parameters**: Allow different hyperparameters for different layers, as some layers might benefit from higher sparsity or lower rank.
-
-4. **Visualization Tools**: Develop tools to visualize the decomposition and understand how knowledge is shared across tasks.
-
-5. **Performance Evaluation**: Conduct a comprehensive evaluation comparing Iso-IASAD with other merging methods across various tasks and model architectures.
+See `src/utils/scale_svd_utils.py` for the full implementation. 
