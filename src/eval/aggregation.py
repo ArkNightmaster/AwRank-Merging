@@ -106,8 +106,35 @@ def create_task_vector(
         # 根据不同的方法处理task vectors
         if config.method.name == "collect_stats":
             print(f"=== Collecting Statistics ===")
-            collect_statistics(task_vectors, config)
-            return None, None
+            from src.datasets import get_dataset
+            from src.datasets.common import get_dataloader
+
+            stats_dir = os.path.join('results/layer_stats')
+            os.makedirs(stats_dir, exist_ok=True)
+
+            model = ImageEncoder(config.model)
+            model.load_state_dict(ptm_check)
+            model.to(config.device)
+            model.eval()
+            
+            for dataset_name in config.DATASETS:
+                print(f"Collecting statistics for {dataset_name}...")
+                dataset = get_dataset(dataset_name, 
+                                      model.train_preprocess, 
+                                      config.data_location,
+                                      batch_size=config.method.batch_size)
+                dataloader = get_dataloader(dataset, 
+                                            is_train=True,
+                                            args=config)
+
+                # 收集层统计信息
+                stats_path = os.path.join(stats_dir, f"{dataset_name}.pt")
+                layer_stats = collect_layer_statistics(model, 
+                                                       dataloader, 
+                                                       config.num_batches, 
+                                                       stats_path)
+                print(f"Layer statistics collected and saved to {stats_path}")
+            exit()
         elif config.method.name == "iso_c":
             print(f"=== Using Iso-C ===")
             new_merged_tv = iso_c(task_vectors, config)
