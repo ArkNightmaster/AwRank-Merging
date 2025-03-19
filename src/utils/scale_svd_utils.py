@@ -1,7 +1,6 @@
 import torch
 import math
 import os
-from src.models.task_vectors import NonLinearTaskVector
 
 # Set device for computation
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -21,6 +20,9 @@ def scale_svd_merging(task_vectors, config):
     Returns:
         list: A list of task vectors after Scale-SVD processing
     """
+    # Import NonLinearTaskVector here to avoid circular import
+    from src.models.task_vectors import NonLinearTaskVector
+    
     # 获取设备，支持字符串或torch.device对象
     if hasattr(config, "device"):
         device = config.device

@@ -4,7 +4,8 @@ from typing import Dict, Optional, Tuple
 import torch
 from omegaconf import DictConfig
 
-from src.models.task_vectors import ImageEncoder, NonLinearTaskVector
+from src.models.modeling import ImageEncoder
+from src.models.task_vectors import NonLinearTaskVector
 from src.utils.tallmask_utils import (
     construct_consensus_mask,
     construct_tall_mask,
@@ -21,7 +22,7 @@ from src.utils.utils import (
 from src.utils.variables_and_paths import get_finetuned_path, get_zeroshot_path
 from src.utils.TSVM_utils import compute_and_sum_svd_mem_reduction
 from src.utils.iso import iso_c, iso_cts
-from src.utils.layer_stats import collect_layer_statistics
+from src.utils.layer_stats import collect_statistics
 from src.utils.scale_svd_utils import scale_svd_merging
 
 
@@ -84,6 +85,14 @@ def create_task_vector(
 
     Args:
         config (DictConfig): The configuration for creating the task vector.
+            config.method should contain:
+            - name: The method name
+            - use_scale_svd: Whether to use scale_svd preprocessing
+            - scale_svd_params: Parameters for scale_svd if use_scale_svd is True
+                - sparsity: Sparsity level
+                - rank_ratio: Rank ratio
+                - num_iters: Number of iterations
+                - mask_strategy: Masking strategy
 
     Returns:
         Tuple[torch.Tensor, Optional[Dict[str, torch.Tensor]]]: A tuple containing the task vector and evaluation masks
@@ -103,53 +112,26 @@ def create_task_vector(
             NonLinearTaskVector(config.model, ptm_check, check) for check in ft_checks
         ]
 
-        # 根据不同的方法处理task vectors
-        if config.method.name == "collect_stats":
-            print(f"=== Collecting Statistics ===")
-            from src.datasets import get_dataset
-            from src.datasets.common import get_dataloader
+    # 检查是否需要进行scale_svd预处理
+    if hasattr(config.method, "use_scale_svd") and config.method.use_scale_svd:
+        print("=== Applying Scale-SVD preprocessing ===")
+        task_vectors = scale_svd_merging(task_vectors, config)
+        print("=== Scale-SVD preprocessing completed ===\n")
 
-            stats_dir = os.path.join('results/layer_stats')
-            os.makedirs(stats_dir, exist_ok=True)
-
-            model = ImageEncoder(config.model)
-            model.load_state_dict(ptm_check)
-            model.to(config.device)
-            model.eval()
-            
-            for dataset_name in config.DATASETS:
-                print(f"Collecting statistics for {dataset_name}...")
-                dataset = get_dataset(dataset_name, 
-                                      model.train_preprocess, 
-                                      config.data_location,
-                                      batch_size=config.method.batch_size)
-                dataloader = get_dataloader(dataset, 
-                                            is_train=True,
-                                            args=config)
-
-                # 收集层统计信息
-                stats_path = os.path.join(stats_dir, f"{dataset_name}.pt")
-                layer_stats = collect_layer_statistics(model, 
-                                                       dataloader, 
-                                                       config.num_batches, 
-                                                       stats_path)
-                print(f"Layer statistics collected and saved to {stats_path}")
-            exit()
-        elif config.method.name == "iso_c":
-            print(f"=== Using Iso-C ===")
-            new_merged_tv = iso_c(task_vectors, config)
-        elif config.method.name == "TSVM":
-            print(f"=== Using TSVM ===")
-            new_merged_tv = compute_and_sum_svd_mem_reduction(task_vectors, config)
-        elif config.method.name == "iso_cts":
-            print(f"=== Using Iso-CTS ===")
-            new_merged_tv = iso_cts(task_vectors, config)
-        elif config.method.name == "scale_svd":
-            print(f"=== Using Scale-SVD ===")
-            # 对每个task vector应用scale_svd处理
-            processed_vectors = scale_svd_merging(task_vectors, config)
-            # 返回处理后的task vectors列表
-            return processed_vectors, None
+    # 根据方法名称选择不同的处理方式
+    if config.method.name == "collect_stats":
+        print(f"=== Collecting Statistics ===")
+        collect_statistics(ptm_check, config)
+        return None, None
+    elif config.method.name == "iso_c":
+        print(f"=== Using Iso-C ===")
+        new_merged_tv = iso_c(task_vectors, config)
+    elif config.method.name == "TSVM":
+        print(f"=== Using TSVM ===")
+        new_merged_tv = compute_and_sum_svd_mem_reduction(task_vectors, config)
+    elif config.method.name == "iso_cts":
+        print(f"=== Using Iso-CTS ===")
+        new_merged_tv = iso_cts(task_vectors, config)
     else:
         # 其他方法需要扁平化的向量表示
         # 将检查点转换为向量
@@ -177,11 +159,6 @@ def create_task_vector(
             ]
         )
         
-        # 创建任务向量对象
-        task_vectors = [
-            NonLinearTaskVector(config.model, ptm_check, check) for check in ft_checks
-        ]
-        
         # 处理其他方法
         if config.method.name == "ties":
             # TIES Merging
@@ -332,10 +309,7 @@ def create_task_vector(
         else:
             raise ValueError(f"Method {config.method.name} not defined.")
 
-    # 根据方法创建最终的任务向量
-    if config.method.name in ["TSVM", "iso_c", "iso_cts", "scale_svd"]:
-        task_vector = NonLinearTaskVector(model_name=config.model, vector=new_merged_tv)
-    else:
+        # 创建最终的任务向量
         merged_tv_state_dict = vector_to_state_dict(
             merged_tv, ptm_check, remove_keys=remove_keys
         )
@@ -343,9 +317,13 @@ def create_task_vector(
         task_vector = NonLinearTaskVector(
             model_name=config.model, vector=merged_tv_state_dict
         )
+
+    if config.method.name in ["TSVM", "iso_c", "iso_cts"]:
+        task_vector = NonLinearTaskVector(model_name=config.model, vector=new_merged_tv)
+
     print("Norm of task vector: ", task_vector.norm())
 
-    if config.method.name not in ["tall_mask", "mag_masking"]:
+    if config.method.name not in ["tall_mask", "mag_masking", "scale_svd"]:
         eval_masks = None
 
     return task_vector, eval_masks

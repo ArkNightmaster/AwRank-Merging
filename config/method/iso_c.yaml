@@ -4,3 +4,10 @@ use_ties: false
 ties_agg: "sum"
 
 full_name: ${method.name}_k=${method.k}
+
+use_scale_svd: true
+scale_svd_params:
+  sparsity: 0.1
+  rank_ratio: 0.75
+  num_iters: 10
+  mask_strategy: "row"

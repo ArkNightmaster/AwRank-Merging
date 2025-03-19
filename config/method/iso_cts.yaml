@@ -6,3 +6,10 @@ ties_agg: "sum"
 common_space_fraction: 0.8
 
 full_name: ${method.name}_k=${method.k}
+
+use_scale_svd: true
+scale_svd_params:
+  sparsity: 0.1
+  rank_ratio: 0.75
+  num_iters: 10
+  mask_strategy: "row"

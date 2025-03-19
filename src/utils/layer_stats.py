@@ -369,6 +369,46 @@ class ViTLinearHook:
         return {"weight": self.stats} if self.stats is not None else {}
 
 @torch.inference_mode()
+def collect_statistics(ptm_check, config):
+    """
+    收集任务向量的输入统计信息。
+    
+    参数：
+        ptm_check: 预训练模型的检查点
+        config: 配置对象
+    """
+    from src.datasets import get_dataset
+    from src.datasets.common import get_dataloader
+    from src.models.modeling import ImageEncoder
+
+    stats_dir = os.path.join('results/layer_stats')
+    os.makedirs(stats_dir, exist_ok=True)
+
+    model = ImageEncoder(config.model)
+    model.load_state_dict(ptm_check)
+    model.to(config.device)
+    model.eval()
+    
+    for dataset_name in config.DATASETS:
+        print(f"Collecting statistics for {dataset_name}...")
+        dataset = get_dataset(dataset_name, 
+                                model.train_preprocess, 
+                                config.data_location,
+                                batch_size=config.method.batch_size)
+        dataloader = get_dataloader(dataset, 
+                                    is_train=True,
+                                    args=config)
+
+        # 收集层统计信息
+        stats_path = os.path.join(stats_dir, f"{dataset_name}.pt")
+        layer_stats = collect_layer_statistics(model, 
+                                                dataloader, 
+                                                config.num_batches, 
+                                                stats_path)
+        print(f"Layer statistics collected and saved to {stats_path}")
+    exit()
+
+@torch.inference_mode()
 def collect_layer_statistics(model, dataloader, num_batches=50, save_path='scale_matrix.pt'):
     """
     收集模型中所有层的输入统计信息。
